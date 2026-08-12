@@ -67,7 +67,31 @@ env_launcher=$(docker run --rm --entrypoint sh "${image}" -c \
   || fail "image FS_UAE_LAUNCHER_VERSION ${env_launcher} != ${launcher_expected}"
 ok "emulator, device helper and launcher ${launcher_bare} installed together"
 
-# 2. Headless boot, as the calling user against a bind mounted data dir.
+# 2. Audio wiring, without needing a sound server: the entrypoint must find a
+# mounted socket and name it, and disable audio only when there is nothing.
+audio_env() {
+  docker run --rm -e FS_UAE_HEADLESS=0 "$@" "${image}" \
+    sh -c 'printf "%s %s" "${PULSE_SERVER:-none}" "${ALSOFT_DRIVERS:-unset}"' \
+    2>/dev/null
+}
+python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' \
+  "${work}/pulse-native" 2>/dev/null || fail "could not create a test socket"
+
+got=$(audio_env)
+[ "${got}" = "none null" ] || fail "no audio devices should disable audio, got '${got}'"
+got=$(audio_env -v "${work}/pulse-native:/tmp/pulse-native")
+[ "${got}" = "unix:/tmp/pulse-native pulse" ] \
+  || fail "mounted pulse socket not used, got '${got}'"
+got=$(audio_env -v "${work}/pulse-native:/run/user/1000/pulse/native")
+[ "${got}" = "unix:/run/user/1000/pulse/native pulse" ] \
+  || fail "pulse socket at the runtime dir path not used, got '${got}'"
+got=$(audio_env -e PULSE_SERVER=unix:/elsewhere)
+[ "${got}" = "unix:/elsewhere pulse" ] || fail "PULSE_SERVER not honoured, got '${got}'"
+got=$(audio_env -e ALSOFT_DRIVERS=alsa)
+[ "${got}" = "none alsa" ] || fail "ALSOFT_DRIVERS not honoured, got '${got}'"
+ok "audio: pulse socket detected, overrides honoured, silent when absent"
+
+# 3. Headless boot, as the calling user against a bind mounted data dir.
 mkdir -p "${work}/data"
 name=fs-uae-smoke-$$
 containers="${containers} ${name}"
@@ -95,7 +119,7 @@ grep -q "\[ERROR\]" "${log}" && fail "errors logged: $(grep '\[ERROR\]' "${log}"
   || fail "data dir not owned by the calling user"
 ok "data dir populated and owned by the calling user"
 
-# 3. VNC and noVNC are serving, checked from inside the container's netns
+# 4. VNC and noVNC are serving, checked from inside the container's netns
 # (python3 comes with websockify).
 probe() {
   docker run --rm --network "container:${name}" --entrypoint python3 "${image}" \
@@ -125,7 +149,7 @@ ok "vnc published on 127.0.0.1:${vnc_port}"
 docker rm -f "${name}" >/dev/null
 containers=
 
-# 4. The launcher: starts, maps its own window, and finds the emulator.
+# 5. The launcher: starts, maps its own window, and finds the emulator.
 mkdir -p "${work}/launcher"
 lname=fs-uae-smoke-launcher-$$
 containers="${containers} ${lname}"
@@ -162,7 +186,7 @@ ok "launcher imported its modules, including .lha support"
 docker rm -f "${lname}" >/dev/null
 containers=
 
-# 5. Host display passthrough: an X server in another container, shared over a
+# 6. Host display passthrough: an X server in another container, shared over a
 # volume, is detected and used instead of starting Xvfb and VNC.
 volume=fs-uae-smoke-x11-$$
 volumes="${volumes} ${volume}"

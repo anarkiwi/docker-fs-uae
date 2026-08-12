@@ -128,12 +128,33 @@ otherwise apply as usual.
 
 ## Audio
 
-Sound is silenced (`ALSOFT_DRIVERS=null`) when the container has neither `/dev/snd` nor
-`PULSE_SERVER`, which keeps OpenAL quiet in headless runs. Pass `--device /dev/snd` for
-ALSA, or point OpenAL at PulseAudio/PipeWire:
+On a desktop the sound server (PulseAudio, or PipeWire's `pipewire-pulse`) owns the ALSA
+devices, so `--device /dev/snd` alone gives the container nothing it can open — OpenAL logs
+`NULL from alcOpenDevice` and FS-UAE plays silently. Mount the server's socket instead:
 
-    -e PULSE_SERVER=unix:/run/user/1000/pulse/native \
-    -v /run/user/$(id -u)/pulse/native:/run/user/1000/pulse/native
+    -v $XDG_RUNTIME_DIR/pulse/native:/tmp/pulse-native
+
+The entrypoint finds a socket at `$PULSE_SOCKET`, `$XDG_RUNTIME_DIR/pulse/native`,
+`/run/user/<uid>/pulse/native` or `/tmp/pulse-native`, sets `PULSE_SERVER` to it and selects
+OpenAL's `pulse` backend. `PULSE_SERVER` inside the container cannot simply be inherited
+from the host, because libpulse resolves the default socket under the container's own
+`XDG_RUNTIME_DIR`.
+
+Run as a user the sound server accepts — the same uid as the desktop session, as
+`-u $(id -u):$(id -g)` gives you. If the server requires cookie authentication, mount the
+cookie as a secret; the entrypoint exports `PULSE_COOKIE` for it:
+
+    -v ~/.config/pulse/cookie:/run/secrets/pulse_cookie:ro
+
+| Audio source | Arguments |
+| --- | --- |
+| Desktop sound server | `-v $XDG_RUNTIME_DIR/pulse/native:/tmp/pulse-native` |
+| Sound server elsewhere | `-e PULSE_SERVER=tcp:host:4713` |
+| Raw ALSA, no sound server | `--device /dev/snd` |
+| Silence | nothing, or `-e ALSOFT_DRIVERS=null` |
+
+`bin/fs-uae-docker` picks the first of these that applies to the host. The entrypoint logs
+which one is in use (`audio: PulseAudio at unix:/tmp/pulse-native`).
 
 ## Input
 

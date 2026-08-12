@@ -51,13 +51,17 @@ Kickstarts and hard drive images. On vek-x, where FS-UAE lives in `/home/josh/FS
       -u $(id -u):$(id -g) \
       -e FS_UAE_DATA_DIR=/home/josh/FS-UAE \
       -v /home/josh/FS-UAE:/home/josh/FS-UAE \
-      -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
-      --device /dev/dri --device /dev/snd \
+      -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix --device /dev/dri \
+      -v $XDG_RUNTIME_DIR/pulse/native:/tmp/pulse-native \
       ghcr.io/anarkiwi/docker-fs-uae:latest fs-uae-launcher
 
-That runs on the host's X display, GPU and sound card. Drop the `DISPLAY`, `/tmp/.X11-unix`
-and `--device` arguments and add `-p 5900:5900 -p 6080:6080` to get the same launcher over
-VNC and noVNC instead:
+That runs on the host's X display and GPU, with sound through the desktop sound server —
+PulseAudio or PipeWire, whichever provides `$XDG_RUNTIME_DIR/pulse/native`. `--device
+/dev/snd` on its own is not enough on a desktop, because the sound server holds the ALSA
+devices and OpenAL then has nothing to open.
+
+Drop the `DISPLAY`, `/tmp/.X11-unix` and `--device` arguments and add
+`-p 5900:5900 -p 6080:6080` to get the same launcher over VNC and noVNC instead:
 
     docker run --rm \
       -u $(id -u):$(id -g) \

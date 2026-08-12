@@ -50,9 +50,42 @@ case "$1" in
     ;;
 esac
 
-# OpenAL fails noisily with no sound device; stay silent unless one is present.
-if [ -z "${ALSOFT_DRIVERS:-}" ] && [ ! -d /dev/snd ] && [ -z "${PULSE_SERVER:-}" ]; then
+# Audio. A PulseAudio (or PipeWire) socket mounted in is preferred: on a desktop
+# host the sound server owns the ALSA devices, so passing /dev/snd alone leaves
+# OpenAL with nothing to open. libpulse looks for the socket under
+# XDG_RUNTIME_DIR, which is not the host's, so point PULSE_SERVER at it.
+find_pulse_socket() {
+  for candidate in "${PULSE_SOCKET:-}" "${XDG_RUNTIME_DIR}/pulse/native" \
+      "/run/user/$(id -u)/pulse/native" /tmp/pulse-native; do
+    if [ -n "${candidate}" ] && [ -S "${candidate}" ]; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ -z "${PULSE_SERVER:-}" ] && pulse_socket=$(find_pulse_socket); then
+  PULSE_SERVER="unix:${pulse_socket}"
+  export PULSE_SERVER
+fi
+if [ -z "${PULSE_COOKIE:-}" ] && [ -r /run/secrets/pulse_cookie ]; then
+  PULSE_COOKIE=/run/secrets/pulse_cookie
+  export PULSE_COOKIE
+fi
+
+if [ -n "${ALSOFT_DRIVERS:-}" ]; then
+  log "audio: ALSOFT_DRIVERS=${ALSOFT_DRIVERS}"
+elif [ -n "${PULSE_SERVER:-}" ]; then
+  # Naming the backend skips OpenAL's failing pipewire probe first.
+  export ALSOFT_DRIVERS=pulse
+  log "audio: PulseAudio at ${PULSE_SERVER}"
+elif [ -d /dev/snd ]; then
+  log "audio: ALSA via /dev/snd"
+else
+  # OpenAL is noisy with no device at all, and FS-UAE logs errors per stream.
   export ALSOFT_DRIVERS=null
+  log "audio: no sound server socket or /dev/snd, audio disabled"
 fi
 
 # A local display (:N[.S]) is a host display only if its socket is mounted in.

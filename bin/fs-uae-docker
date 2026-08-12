@@ -20,9 +20,22 @@ set -- "$@" run --rm -i \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v "${FS_UAE_DATA_DIR}:/data"
 
-# Sound and a GPU if the host has them; software rendering otherwise.
-[ -d /dev/snd ] && set -- "$@" --device /dev/snd
+# A GPU if the host has one; software rendering otherwise.
 [ -d /dev/dri ] && set -- "$@" --device /dev/dri
+
+# Sound: the desktop sound server if it is running, otherwise raw ALSA. A
+# PulseAudio or PipeWire server owns the ALSA devices, so /dev/snd on its own
+# would leave the container with no openable device.
+pulse_socket=${PULSE_SOCKET:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse/native}
+if [ -S "${pulse_socket}" ]; then
+  set -- "$@" -v "${pulse_socket}:/tmp/pulse-native" \
+    -e PULSE_SERVER=unix:/tmp/pulse-native
+  if [ -r "${HOME}/.config/pulse/cookie" ]; then
+    set -- "$@" -v "${HOME}/.config/pulse/cookie:/run/secrets/pulse_cookie:ro"
+  fi
+elif [ -d /dev/snd ]; then
+  set -- "$@" --device /dev/snd
+fi
 if [ -n "${XAUTHORITY:-}" ] && [ -r "${XAUTHORITY}" ]; then
   set -- "$@" -e XAUTHORITY=/tmp/.docker.xauth \
     -v "${XAUTHORITY}:/tmp/.docker.xauth:ro"
