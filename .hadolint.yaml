@@ -1,0 +1,3 @@
+ignored:
+  # Debian package versions are not pinned; the base image tag is.
+  - DL3008

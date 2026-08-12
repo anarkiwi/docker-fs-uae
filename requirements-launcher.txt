@@ -1,0 +1,5 @@
+# Optional FS-UAE Launcher dependency: .lha support, as used by WHDLoad
+# archives. Not packaged by Debian, so it comes from PyPI, pinned and hashed.
+# The hash is the CPython 3.13 manylinux x86-64 wheel, matching Debian trixie.
+lhafile==0.3.1 \
+    --hash=sha256:46dfd35f23ab42ae6a16f8deac46f9f3a9fbe79b4cf945d6f451a643500c0fff

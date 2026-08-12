@@ -1,0 +1,41 @@
+#!/bin/sh
+# Run FS-UAE in a container on the current X11 display, with the current
+# directory (or FS_UAE_DATA_DIR) as the FS-UAE base dir.
+#   fs-uae-docker [fs-uae options...] [config.fs-uae]
+# Config files must be given as paths under the mounted data directory.
+set -eu
+
+: "${FS_UAE_IMAGE:=ghcr.io/anarkiwi/docker-fs-uae:latest}"
+: "${FS_UAE_DOCKER:=docker}"
+: "${FS_UAE_DATA_DIR:=${PWD}}"
+
+[ -n "${DISPLAY:-}" ] || { echo "fs-uae-docker: DISPLAY is not set" >&2; exit 1; }
+
+# Build the docker command in $@, keeping the caller's FS-UAE arguments last:
+# append the docker options, then rotate the caller's arguments to the end.
+args=$#
+set -- "$@" run --rm -i \
+  -u "$(id -u):$(id -g)" \
+  -e "DISPLAY=${DISPLAY}" \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v "${FS_UAE_DATA_DIR}:/data"
+
+# Sound and a GPU if the host has them; software rendering otherwise.
+[ -d /dev/snd ] && set -- "$@" --device /dev/snd
+[ -d /dev/dri ] && set -- "$@" --device /dev/dri
+if [ -n "${XAUTHORITY:-}" ] && [ -r "${XAUTHORITY}" ]; then
+  set -- "$@" -e XAUTHORITY=/tmp/.docker.xauth \
+    -v "${XAUTHORITY}:/tmp/.docker.xauth:ro"
+fi
+
+# shellcheck disable=SC2086 # FS_UAE_DOCKER_OPTS is intentionally word split.
+set -- "$@" ${FS_UAE_DOCKER_OPTS:-} "${FS_UAE_IMAGE}" fs-uae
+
+while [ "${args}" -gt 0 ]; do
+  arg=$1
+  shift
+  set -- "$@" "${arg}"
+  args=$((args - 1))
+done
+
+exec "${FS_UAE_DOCKER}" "$@"
